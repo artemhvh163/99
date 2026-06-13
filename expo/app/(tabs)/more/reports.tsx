@@ -11,6 +11,7 @@ import { ThemeColors } from '@/constants/colors';
 import { useParking } from '@/providers/ParkingProvider';
 import { formatMoney, formatDateTime, formatDate, daysUntil, getServiceTypeLabel } from '@/utils/helpers';
 import BarChart from '@/components/BarChart';
+import { calculateRevenueFinancials } from '@/utils/financeCalculations';
 
 type Tab = 'revenue' | 'shifts' | 'auto' | 'operators' | 'debts' | 'expiring' | 'occupancy';
 type Period = 'day' | 'week' | 'halfmonth' | 'month' | 'quarter' | 'year' | 'all';
@@ -21,7 +22,7 @@ export default function ReportsScreen() {
   const {
     transactions, expenses, shifts, sessions, payments,
     activeCars, activeClients, debtors, expiringSubscriptions,
-    dailyOccupancySnapshots,
+    dailyOccupancySnapshots, adminCashOperations, salaryAdvances, salaryPayments,
   } = useParking();
 
   const [tab, setTab] = useState<Tab>('revenue');
@@ -39,6 +40,27 @@ export default function ReportsScreen() {
       case 'quarter': return d.getTime() > now.getTime() - 90 * 86400000;
       case 'year': return d.getFullYear() === now.getFullYear();
       default: return true;
+    }
+  }, [period]);
+
+  const reportDateRange = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    switch (period) {
+      case 'day':
+        return { from: today, to: undefined };
+      case 'week':
+        return { from: new Date(now.getTime() - 7 * 86400000), to: undefined };
+      case 'halfmonth':
+        return { from: new Date(now.getTime() - 15 * 86400000), to: undefined };
+      case 'month':
+        return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: undefined };
+      case 'quarter':
+        return { from: new Date(now.getTime() - 90 * 86400000), to: undefined };
+      case 'year':
+        return { from: new Date(now.getFullYear(), 0, 1), to: undefined };
+      case 'all':
+        return { from: undefined, to: undefined };
     }
   }, [period]);
 
@@ -157,19 +179,15 @@ export default function ReportsScreen() {
   }, [sessions, period]);
 
   const revenueStats = useMemo(() => {
-    const filtered = transactions.filter(t => periodFilter(t.date));
-    const payments = filtered.filter(t => ['payment', 'debt_payment'].includes(t.type));
-    const cancels = filtered.filter(t => t.type === 'cancel_payment');
-    const refunds = filtered.filter(t => t.type === 'refund');
-
-    const cash = payments.filter(t => t.method === 'cash').reduce((s, t) => s + t.amount, 0);
-    const card = payments.filter(t => t.method === 'card').reduce((s, t) => s + t.amount, 0);
-    const adjustment = payments.filter(t => t.method === 'adjustment').reduce((s, t) => s + t.amount, 0);
-    const cancelTotal = cancels.reduce((s, t) => s + t.amount, 0);
-    const refundTotal = refunds.reduce((s, t) => s + t.amount, 0);
-    const total = cash + card + adjustment;
-
-    const periodExp = expenses.filter(e => periodFilter(e.date)).reduce((s, e) => s + e.amount, 0);
+    const periodRevenue = calculateRevenueFinancials(
+      transactions,
+      expenses,
+      adminCashOperations,
+      salaryAdvances,
+      salaryPayments,
+      reportDateRange.from,
+      reportDateRange.to,
+    );
 
     const expByCategory = new Map<string, { amount: number; count: number }>();
     expenses.filter(e => periodFilter(e.date)).forEach(e => {
@@ -180,8 +198,18 @@ export default function ReportsScreen() {
       expByCategory.set(cat, existing);
     });
 
-    return { cash, card, adjustment, total, cancelTotal, refundTotal, expenses: periodExp, net: total - periodExp - cancelTotal - refundTotal, expByCategory: Array.from(expByCategory.entries()) };
-  }, [transactions, expenses, periodFilter]);
+    return {
+      cash: periodRevenue.cashRevenue,
+      card: periodRevenue.cardRevenue,
+      adjustment: periodRevenue.adjustmentRevenue,
+      total: periodRevenue.grossRevenue,
+      cancelTotal: periodRevenue.cancelledTotal,
+      refundTotal: periodRevenue.refundedTotal,
+      expenses: periodRevenue.expensesTotal,
+      net: periodRevenue.netRevenue,
+      expByCategory: Array.from(expByCategory.entries()),
+    };
+  }, [transactions, expenses, adminCashOperations, salaryAdvances, salaryPayments, reportDateRange, periodFilter]);
 
   const shiftStats = useMemo(() => {
     const filtered = shifts.filter(s => s.closedAt ? periodFilter(s.closedAt) : periodFilter(s.openedAt));

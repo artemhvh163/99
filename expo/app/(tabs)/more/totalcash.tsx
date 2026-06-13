@@ -10,10 +10,9 @@ import { useColors } from '@/providers/ThemeProvider';
 import { ThemeColors } from '@/constants/colors';
 import { useParking } from '@/providers/ParkingProvider';
 import { formatMoney, formatDateTime } from '@/utils/helpers';
-import { calculateShiftClosingSummary } from '@/utils/financeCalculations';
 
 export default function TotalCashScreen() {
-  const { currentShift, shifts, transactions, expenses, withdrawals } = useParking();
+  const { currentShift, shifts, financeSnapshot } = useParking();
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -26,26 +25,25 @@ export default function TotalCashScreen() {
 
   const currentShiftStats = useMemo(() => {
     if (!currentShift) return null;
-    const summary = calculateShiftClosingSummary(currentShift, transactions, expenses, withdrawals);
+    const managerCash = financeSnapshot.managerCash;
 
     return {
-      cashIncome: summary.cashIncome,
-      cardIncome: summary.cardIncome,
-      refunds: summary.refundedCash,
-      cancelled: summary.cancelledCash,
-      expenses: summary.totalExpenses,
-      withdrawals: summary.totalWithdrawals,
-      totalIncome: summary.cashIncome + summary.cardIncome,
-      totalOutgoing: summary.totalExpenses + summary.totalWithdrawals + summary.refundedCash + summary.cancelledCash,
-      netCash: summary.calculatedBalance - (currentShift.acceptedCash ?? currentShift.carryOver ?? 0),
-      calculatedBalance: summary.calculatedBalance,
+      cashIncome: managerCash.cashRevenue,
+      cardIncome: managerCash.cardRevenue,
+      refunds: managerCash.refundedCash,
+      cancelled: managerCash.cancelledCash,
+      expenses: managerCash.managerExpenses,
+      withdrawals: managerCash.withdrawalsTotal,
+      totalIncome: managerCash.cashRevenue + managerCash.cardRevenue,
+      totalOutgoing: managerCash.managerExpenses + managerCash.withdrawalsTotal + managerCash.refundedCash + managerCash.cancelledCash,
+      netCash: managerCash.currentShiftCashDelta,
+      calculatedBalance: managerCash.currentBalance,
     };
-  }, [currentShift, transactions, expenses, withdrawals]);
+  }, [currentShift, financeSnapshot]);
 
-  const carryOver = currentShift?.carryOver ?? 0;
-  const accepted = currentShift?.acceptedCash ?? carryOver;
+  const accepted = financeSnapshot.managerCash.acceptedCash;
   const currentCashIncome = currentShiftStats?.netCash ?? 0;
-  const totalCash = accepted + currentCashIncome;
+  const totalCash = financeSnapshot.managerCash.currentBalance;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -69,7 +67,7 @@ export default function TotalCashScreen() {
           <ArrowRightLeft size={18} color={colors.warning} />
           <Text style={styles.breakdownLabel}>Принято при открытии</Text>
           <Text style={[styles.breakdownValue, { color: colors.warning }]} numberOfLines={1} adjustsFontSizeToFit>
-            {formatMoney(currentShift?.acceptedCash ?? carryOver)}
+            {formatMoney(accepted)}
           </Text>
         </View>
         <View style={[styles.breakdownCard, styles.currentBg]}>

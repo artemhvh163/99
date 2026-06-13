@@ -2,10 +2,9 @@ import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthProvider';
-import { DEFAULT_TARIFFS } from '@/constants/tariffs';
+import { DEFAULT_TARIFFS, MAX_ACCRUAL_DAYS } from '@/constants/tariffs';
 import { generateId, roundMoney, calculateDays, isToday, normalizePhone, normalizePlateForSearch } from '@/utils/helpers';
-import { calculateActiveSessionDebt, calculateShiftClosingSummary } from '@/utils/financeCalculations';
-import { MAX_ACCRUAL_DAYS } from '@/constants/tariffs';
+import { calculateActiveSessionDebt, calculateFinanceSnapshot, calculateShiftClosingSummary } from '@/utils/financeCalculations';
 import { initSupabaseTable, loadFromSupabase, saveToSupabase, subscribeToChanges } from '@/utils/supabase';
 import {
   Client, Car, ParkingSession, Payment, Transaction, Debt,
@@ -1639,26 +1638,44 @@ export const [ParkingProvider, useParking] = createContextHook(() => {
       }));
   }, [data.subscriptions, data.clients, data.cars]);
 
-  const adminCashBalance = useMemo(() => {
-    const cashFromManagers = data.withdrawals.reduce((s, w) => s + w.amount, 0);
-    const cardIncome = data.adminCashOperations
-      .filter(o => o.type === 'card_income')
-      .reduce((s, o) => s + o.amount, 0);
-    const adminExpensesCash = data.adminCashOperations
-      .filter(o => o.type === 'admin_expense' && o.method === 'cash')
-      .reduce((s, o) => s + o.amount, 0);
-    const adminExpensesCard = data.adminCashOperations
-      .filter(o => o.type === 'admin_expense' && o.method === 'card')
-      .reduce((s, o) => s + o.amount, 0);
-    const salaryAdvCash = data.salaryAdvances.filter(a => a.method === 'cash').reduce((s, a) => s + a.amount, 0);
-    const salaryAdvCard = data.salaryAdvances.filter(a => a.method === 'card').reduce((s, a) => s + a.amount, 0);
-    const salaryPayCash = data.salaryPayments.filter(p => p.method === 'cash').reduce((s, p) => s + p.netPaid, 0);
-    const salaryPayCard = data.salaryPayments.filter(p => p.method === 'card').reduce((s, p) => s + p.netPaid, 0);
+  const financeSnapshot = useMemo(() => calculateFinanceSnapshot({
+    currentShift,
+    shifts: data.shifts,
+    transactions: data.transactions,
+    expenses: data.expenses,
+    withdrawals: data.withdrawals,
+    adminCashOperations: data.adminCashOperations,
+    salaryAdvances: data.salaryAdvances,
+    salaryPayments: data.salaryPayments,
+  }), [
+    currentShift,
+    data.shifts,
+    data.transactions,
+    data.expenses,
+    data.withdrawals,
+    data.adminCashOperations,
+    data.salaryAdvances,
+    data.salaryPayments,
+  ]);
 
-    const cash = roundMoney(cashFromManagers - adminExpensesCash - salaryAdvCash - salaryPayCash);
-    const card = roundMoney(cardIncome - adminExpensesCard - salaryAdvCard - salaryPayCard);
-    return { cash, card, total: cash + card };
-  }, [data.withdrawals, data.adminCashOperations, data.salaryAdvances, data.salaryPayments]);
+  const managerCashBalance = financeSnapshot.managerCash.currentBalance;
+
+  const totalCashData = useMemo(() => ({
+    totalCash: financeSnapshot.managerCash.currentBalance,
+    carryOver: financeSnapshot.managerCash.acceptedCash,
+    managerCash: financeSnapshot.totalCash.managerCashBalance,
+    adminCash: financeSnapshot.totalCash.adminCashBalance,
+    physicalCash: financeSnapshot.totalCash.physicalCash,
+    card: financeSnapshot.adminCash.cardBalance,
+    total: financeSnapshot.totalCash.systemBalance,
+    netCash: financeSnapshot.managerCash.currentShiftCashDelta,
+  }), [financeSnapshot]);
+
+  const adminCashBalance = useMemo(() => ({
+    cash: financeSnapshot.adminCash.cashBalance,
+    card: financeSnapshot.adminCash.cardBalance,
+    total: financeSnapshot.adminCash.totalBalance,
+  }), [financeSnapshot]);
 
   const addScheduledShift = useCallback((shift: Omit<ScheduledShift, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newShift: ScheduledShift = {
@@ -1940,6 +1957,12 @@ export const [ParkingProvider, useParking] = createContextHook(() => {
         ...prev,
         withdrawals: [...prev.withdrawals, withdrawal],
         adminCashOperations: [...prev.adminCashOperations, adminOp],
+        transactions: [{
+          id: generateId(), type: 'withdrawal' as const, amount: roundMoney(amount),
+          description: `РЎРЅСЏС‚РёРµ Р°РґРјРёРЅРѕРј: ${withdrawalNote}`, method: 'cash' as const,
+          operatorId: currentUser.id, operatorName: currentUser.name, date: now,
+          shiftId: currentShift?.id,
+        }, ...prev.transactions],
         shifts: updatedShifts,
       };
     });
@@ -2876,6 +2899,9 @@ export const [ParkingProvider, useParking] = createContextHook(() => {
     getCurrentViolationMonth,
     getTodayCleaningShift,
     activeScheduledShifts,
+    financeSnapshot,
+    managerCashBalance,
+    totalCashData,
     adminCashBalance,
     employeeSalaryDebts,
     addManualDebt,
@@ -2907,7 +2933,7 @@ export const [ParkingProvider, useParking] = createContextHook(() => {
     issueSalaryAdvance, paySalary, addAdminExpense, adminWithdrawFromManager,
     updateCleanupTemplate, completeCleanup, saveCleanupChecklist,
     getCurrentViolationMonth, getTodayCleaningShift, activeScheduledShifts,
-    adminCashBalance, employeeSalaryDebts,
+    financeSnapshot, managerCashBalance, totalCashData, adminCashBalance, employeeSalaryDebts,
     addManualDebt, deleteDebt, addExpenseCategory, deleteExpenseCategory, activeExpenseCategories,
     logLogin, addSessionNote, getSessionNotes, getSessionAccrualTotal,
     adminForceCloseShift,

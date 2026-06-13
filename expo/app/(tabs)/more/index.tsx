@@ -15,7 +15,6 @@ import { useParking } from '@/providers/ParkingProvider';
 import { useColors, useTheme } from '@/providers/ThemeProvider';
 import { ThemeColors } from '@/constants/colors';
 import { formatMoney } from '@/utils/helpers';
-import { calculateShiftClosingSummary } from '@/utils/financeCalculations';
 
 interface MenuItem {
   label: string;
@@ -30,7 +29,7 @@ export default function MoreScreen() {
   const router = useRouter();
   const { isAdmin } = useAuth();
   const {
-    debtors, getCurrentViolationMonth, currentShift, transactions, expenses, withdrawals,
+    debtors, getCurrentViolationMonth, currentShift, managerCashBalance,
     adminWithdrawFromManager, addAdminExpense, adminCashBalance,
   } = useParking();
   const colors = useColors();
@@ -88,10 +87,6 @@ export default function MoreScreen() {
   }, [expAmount, expMethod, expCategory, expDesc, addAdminExpense]);
 
   const violationCount = getCurrentViolationMonth.violationCount;
-  const managerCashBalance = useMemo(() => {
-    if (!currentShift) return 0;
-    return calculateShiftClosingSummary(currentShift, transactions, expenses, withdrawals).calculatedBalance;
-  }, [currentShift, transactions, expenses, withdrawals]);
 
   const sections = useMemo(() => {
     const ops: MenuItem[] = [

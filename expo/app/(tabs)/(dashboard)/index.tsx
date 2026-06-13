@@ -15,7 +15,6 @@ import { useParking } from '@/providers/ParkingProvider';
 import { useColors } from '@/providers/ThemeProvider';
 import { ThemeColors } from '@/constants/colors';
 import { buildEntitySearchQuery, formatMoney, daysUntil, matchClientWithCars } from '@/utils/helpers';
-import { calculateShiftClosingSummary } from '@/utils/financeCalculations';
 import CleaningChecklist from '@/components/CleaningChecklist';
 import { hapticSuccess, hapticMedium } from '@/utils/haptics';
 
@@ -35,7 +34,7 @@ export default function DashboardScreen() {
     expiringSubscriptions, openShift, needsShiftCheck,
     getCurrentViolationMonth, getTodayCleaningShift,
     activeClients, activeCars,
-    transactions, expenses, withdrawals,
+    totalCashData,
     syncStatus, adminForceCloseShift,
   } = useParking();
   const colors = useColors();
@@ -128,15 +127,6 @@ export default function DashboardScreen() {
   }, [currentShift, shiftProgressAnim]);
 
 
-
-  const totalCashData = useMemo(() => {
-    if (!currentShift) return null;
-    const summary = calculateShiftClosingSummary(currentShift, transactions, expenses, withdrawals);
-    const carryOver = currentShift.acceptedCash ?? currentShift.carryOver ?? 0;
-    const totalCash = summary.calculatedBalance;
-    const netCash = totalCash - carryOver;
-    return { totalCash, carryOver, netCash };
-  }, [currentShift, transactions, expenses, withdrawals]);
 
   const searchResults = useMemo(() => {
     if (searchQuery.length < 1) return [];
@@ -322,7 +312,7 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      {totalCashData && (
+      {currentShift && totalCashData && (
         <TouchableOpacity style={styles.totalCashCard} onPress={() => router.push('/totalcash-screen' as never)} activeOpacity={0.7}>
           <View style={styles.totalCashHeader}>
             <View style={styles.totalCashIconWrap}><Wallet size={22} color="#fff" /></View>

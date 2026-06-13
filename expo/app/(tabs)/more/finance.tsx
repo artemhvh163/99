@@ -14,7 +14,6 @@ import { useParking } from '@/providers/ParkingProvider';
 import { formatMoney, formatDateTime } from '@/utils/helpers';
 import {
   calculateAdminCashRegister,
-  calculateShiftClosingSummary,
   getDateRangeForPeriod,
   PeriodKey,
 } from '@/utils/financeCalculations';
@@ -27,7 +26,7 @@ export default function FinanceScreen() {
   const {
     adminCashBalance, currentShift, transactions, withdrawals, expenses,
     adminCashOperations, adminWithdrawFromManager, addAdminExpense,
-    salaryAdvances, salaryPayments,
+    salaryAdvances, salaryPayments, managerCashBalance,
   } = useParking();
 
   const [tab, setTab] = useState<Tab>('overview');
@@ -44,9 +43,9 @@ export default function FinanceScreen() {
   const adminRegister = useMemo(() => {
     const { from, to } = getDateRangeForPeriod(period);
     return calculateAdminCashRegister(
-      adminCashOperations, withdrawals, salaryAdvances, salaryPayments, from, to
+      adminCashOperations, transactions, salaryAdvances, salaryPayments, from, to
     );
-  }, [adminCashOperations, withdrawals, salaryAdvances, salaryPayments, period]);
+  }, [adminCashOperations, transactions, salaryAdvances, salaryPayments, period]);
 
   const managerExpenses = useMemo(() =>
     expenses.filter(e => e.type === 'manager' || !e.type).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 50),
@@ -66,11 +65,6 @@ export default function FinanceScreen() {
   const filteredExpensesTotal = useMemo(() =>
     filteredManagerExpenses.reduce((sum, e) => sum + e.amount, 0),
   [filteredManagerExpenses]);
-
-  const managerCashBalance = useMemo(() => {
-    if (!currentShift) return 0;
-    return calculateShiftClosingSummary(currentShift, transactions, expenses, withdrawals).calculatedBalance;
-  }, [currentShift, transactions, expenses, withdrawals]);
 
   const handleWithdraw = () => {
     const amt = parseFloat(withdrawAmount);
